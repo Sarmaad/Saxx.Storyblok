@@ -94,9 +94,16 @@ namespace Saxx.Storyblok.Middleware
             // if we have such a URL, we also change the current culture accordingly
             foreach (var cultureMapping in cultureMappings)
             {
-                if (slug.StartsWith($"/{cultureMapping.Value}/"))
+                if (slug.StartsWith($"{cultureMapping.Value}"))
                 {
-                    var slugWithoutCulture = slug.Substring(cultureMapping.Value.ToString().Length + 2);
+                    var slugWithoutCulture = slug.Substring(cultureMapping.Value.ToString().Length).Trim('/');
+
+                    // we are at the root, make sure its the home page
+                    if (string.IsNullOrEmpty(slugWithoutCulture))
+                    {
+                        slugWithoutCulture = settings.HandleRootWithSlug;
+                    }
+
                     logger.LogTrace($"Trying to load story for slug \"{slugWithoutCulture}\" for culture {cultureMapping.Value}.");
                     CultureInfo.CurrentUICulture = CultureInfo.CurrentCulture = cultureMapping.Value;
                     story = await storyblokClient.Story().WithCulture(cultureMapping.Value).WithSlug(slugWithoutCulture).Load();
