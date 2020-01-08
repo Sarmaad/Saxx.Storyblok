@@ -10,12 +10,16 @@ namespace Saxx.Storyblok.Converters
             using var doc = JsonDocument.ParseValue(ref reader);
 
             doc.RootElement.GetProperty("id").TryGetGuid(out var id);
-
+            if (!Enum.TryParse(doc.RootElement.GetProperty("linktype").GetString(), true, out LinkType linkType))
+            {
+                linkType = LinkType.Url;
+            }
+            
             return new StoryblokLink
             {
                 Id = id,
                 Url = doc.RootElement.GetProperty("url").GetString(),
-                LinkType = doc.RootElement.GetProperty("linktype").GetString(),
+                LinkType = linkType,
                 FieldType = doc.RootElement.GetProperty("fieldtype").GetString(),
                 CachedUrl = doc.RootElement.GetProperty("cached_url").GetString()
             };
