@@ -158,7 +158,8 @@ namespace Saxx.Storyblok
 
         internal async Task<StoryblokStory<T>> LoadStory<T>(CultureInfo culture, string slug) where T : StoryblokComponent
         {
-            return new StoryblokStory<T>(await LoadStory(culture, slug));
+            var story = await LoadStory(culture, slug);
+            return story != null ? new StoryblokStory<T>(story) : null;
         }
 
         internal async Task<StoryblokStory> LoadStory(CultureInfo culture, string slug)
