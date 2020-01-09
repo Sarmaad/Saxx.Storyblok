@@ -68,47 +68,72 @@ namespace Saxx.Storyblok.Middleware
                 // make sure we can display inside of the Storyblok iframe
                 context.Response.Headers.Add("Content-Security-Policy", "frame-ancestors 'self' app.storyblok.com");
             }
+            // handle storyblok culture 
+            var cultureMappings = settings.CultureMappings ?? new Dictionary<CultureInfo, CultureInfo>();
+            var cultureSpecificSlug = false;
+            foreach (var cultureMapping in cultureMappings)
+            {
+                if (!slug.StartsWith($"{cultureMapping.Value}")) continue;
 
+                logger.LogTrace($"Set culture {cultureMapping.Value}.");
+                CultureInfo.CurrentUICulture = CultureInfo.CurrentCulture = cultureMapping.Value;
+                cultureSpecificSlug = true;
+                break;
+            }
+
+            // ignore slug if it matches any below. Culture aware 
             if (settings.IgnoreSlugs != null)
             {
-                if (settings.IgnoreSlugs.Any(x => slug.Equals(x.Trim('/'), StringComparison.InvariantCultureIgnoreCase)))
+                // exact match url
+                if (settings.IgnoreSlugs.Any(x =>
+                        slug.Equals(x.Trim('/'), StringComparison.InvariantCultureIgnoreCase) ||
+                        cultureSpecificSlug && slug.Substring(CultureInfo.CurrentCulture.ToString().Length)
+                            .Trim('/')
+                            .StartsWith(x.Trim('/'), StringComparison.InvariantCultureIgnoreCase)
+                    )
+                )
                 {
                     // don't handle this slug in the middleware, because exact match of URL
-                    logger.LogTrace($"Ignoring request \"{slug}\", because it's configured to be ignored (exact match).");
+                    logger.LogTrace(
+                        $"Ignoring request \"{slug}\", because it's configured to be ignored (exact match).");
                     await _next.Invoke(context);
                     return;
                 }
-                if (settings.IgnoreSlugs.Any(x => x.EndsWith("*", StringComparison.InvariantCultureIgnoreCase) && slug.StartsWith(x.TrimEnd('*').Trim('/'), StringComparison.InvariantCultureIgnoreCase)))
+
+                // wild card match with culture aware
+                if (settings.IgnoreSlugs.Any(x =>
+                        x.EndsWith("*", StringComparison.InvariantCultureIgnoreCase) &&
+                        (
+                            slug.StartsWith(x.TrimEnd('*').Trim('/'), StringComparison.InvariantCultureIgnoreCase) ||
+                            cultureSpecificSlug && slug.Substring(CultureInfo.CurrentCulture.ToString().Length)
+                                .Trim('/')
+                                .StartsWith(x.TrimEnd('*').Trim('/'), StringComparison.InvariantCultureIgnoreCase)
+                        )
+                    )
+                )
                 {
                     // don't handle this slug in the middleware, because the configuration ends with a *, which means we compare via StartsWith
-                    logger.LogTrace($"Ignoring request \"{slug}\", because it's configured to be ignored (partial match).");
+                    logger.LogTrace(
+                        $"Ignoring request \"{slug}\", because it's configured to be ignored (partial match).");
                     await _next.Invoke(context);
                     return;
                 }
             }
 
-            StoryblokStory story = null;
-            var cultureMappings = settings.CultureMappings ?? new Dictionary<CultureInfo, CultureInfo>();
 
+            StoryblokStory story = null;
             // special handling of Storyblok preview URLs that contain the language, like ~/de/home vs. ~/home
             // if we have such a URL, we also change the current culture accordingly
-            foreach (var cultureMapping in cultureMappings)
+            if (cultureSpecificSlug)
             {
-                if (slug.StartsWith($"{cultureMapping.Value}"))
+                var slugWithoutCulture = slug.Substring(CultureInfo.CurrentCulture.ToString().Length).Trim('/');
+                // we are at the root, make sure its the home page
+                if (string.IsNullOrEmpty(slugWithoutCulture))
                 {
-                    var slugWithoutCulture = slug.Substring(cultureMapping.Value.ToString().Length).Trim('/');
-
-                    // we are at the root, make sure its the home page
-                    if (string.IsNullOrEmpty(slugWithoutCulture))
-                    {
-                        slugWithoutCulture = settings.HandleRootWithSlug;
-                    }
-
-                    logger.LogTrace($"Trying to load story for slug \"{slugWithoutCulture}\" for culture {cultureMapping.Value}.");
-                    CultureInfo.CurrentUICulture = CultureInfo.CurrentCulture = cultureMapping.Value;
-                    story = await storyblokClient.Story().WithCulture(cultureMapping.Value).WithSlug(slugWithoutCulture).Load();
-                    break;
+                    slugWithoutCulture = settings.HandleRootWithSlug;
                 }
+                logger.LogTrace($"Trying to load story for slug \"{slugWithoutCulture}\" for culture {CultureInfo.CurrentCulture}.");
+                story = await storyblokClient.Story().WithCulture(CultureInfo.CurrentCulture).WithSlug(slugWithoutCulture).Load();
             }
 
             // we're in the editor, but we don't have the language in the URL
@@ -193,5 +218,6 @@ namespace Saxx.Storyblok.Middleware
 
             return executor.ExecuteAsync(actionContext, result);
         }
+
     }
 }
